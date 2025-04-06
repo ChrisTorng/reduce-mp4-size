@@ -5,6 +5,7 @@ import re
 import subprocess
 import sys
 import time
+import json
 
 def parse_size(size_str):
     """Parse size string like '10m', '1g' to bytes."""
@@ -48,42 +49,60 @@ def format_size(size_bytes):
 
 
 def get_video_info(filename):
-    """Get video information using ffprobe."""
+    """獲取影片資訊使用 ffprobe。"""
+    # 調用 ffprobe 獲取影片資訊，明確指定串流索引
     cmd = [
         "ffprobe",
         "-v", "error",
-        "-show_entries", "format=duration,size:stream=width,height,bit_rate",
-        "-of", "default=noprint_wrappers=1:nokey=1",
+        "-select_streams", "v:0",  # 選擇第一個影片串流
+        "-show_entries", "stream=width,height,bit_rate,duration",
+        "-show_entries", "format=duration,size",
+        "-of", "json",  # 使用 JSON 輸出格式更可靠
         filename
     ]
     
     try:
         output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, universal_newlines=True)
-        values = output.strip().split('\n')
+        data = json.loads(output)
         
-        # Extract values (duration, size, width, height, bit_rate)
-        if len(values) >= 5:
-            duration = float(values[0])
-            file_size = int(values[1])
-            width = int(values[2])
-            height = int(values[3])
-            
-            # Bit rate might be N/A
-            try:
-                bit_rate = int(values[4])
-            except ValueError:
-                # Calculate bitrate from file size and duration if not available
-                bit_rate = int((file_size * 8) / duration)
-                
-            return {
-                'duration': duration,
-                'size': file_size,
-                'width': width,
-                'height': height,
-                'bit_rate': bit_rate
-            }
-    except subprocess.CalledProcessError as e:
-        print(f"Error analyzing video: {e}")
+        # 從 JSON 中提取資訊
+        stream_info = data.get('streams', [{}])[0]
+        format_info = data.get('format', {})
+        
+        # 獲取寬度和高度
+        width = int(stream_info.get('width', 0))
+        height = int(stream_info.get('height', 0))
+        
+        # 獲取位元速率，優先從串流中獲取，如果沒有則從格式資訊計算
+        bit_rate = None
+        if 'bit_rate' in stream_info and stream_info['bit_rate'] not in (None, 'N/A'):
+            bit_rate = int(stream_info['bit_rate'])
+        elif 'bit_rate' in format_info and format_info['bit_rate'] not in (None, 'N/A'):
+            bit_rate = int(format_info['bit_rate'])
+        
+        # 獲取持續時間
+        duration = None
+        if 'duration' in stream_info:
+            duration = float(stream_info['duration'])
+        elif 'duration' in format_info:
+            duration = float(format_info['duration'])
+        
+        # 獲取檔案大小
+        file_size = int(format_info.get('size', 0))
+        
+        # 如果位元速率沒有從 ffprobe 獲取，則進行計算
+        if bit_rate is None and duration > 0:
+            bit_rate = int((file_size * 8) / duration)
+        
+        return {
+            'duration': duration,
+            'size': file_size,
+            'width': width,
+            'height': height,
+            'bit_rate': bit_rate
+        }
+    except (subprocess.CalledProcessError, json.JSONDecodeError, ValueError, IndexError, KeyError) as e:
+        print(f"分析影片時發生錯誤: {e}")
         sys.exit(1)
 
 
