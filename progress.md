@@ -23,3 +23,6 @@ python reduce-mp4.py
 
 3. Agent: 執行結果如下，讀取原始檔案之解析度、時間長度、檔案大小資訊都是完全不正確，後面自然也錯得離譜，請詳細檢查:
    => 改用 JSON 讀 ffprobe 輸出
+
+4. 請參考目前程式及提示檔，為我建立 README.md。
+   => 建立 README.md
